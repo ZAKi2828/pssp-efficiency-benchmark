@@ -23,4 +23,5 @@ CPU: Intel Xeon 2.00 GHz, 2 threads, batch size 1 (Google Colab). Full results: 
 - `colab/PSSP_real_benchmark.ipynb` — the complete training/evaluation pipeline
 - `results_real/` — per-seed results, summary, statistical tests, loss curves, leakage-filter hits, predictions, figures
 - `make_figs.py` — regenerates the figures from `results_real/`
+- `submission/` — separate figure files (Figure_1–3, PNG 300 dpi + PDF) and the graphical abstract (TIFF/PDF/PNG)
 - `paper/Roaissat_PSSP_Manuscript_v4.tex`, `Highlights.txt`, `Cover_Letter.txt`
