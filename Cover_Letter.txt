@@ -1,0 +1,29 @@
+Cover Letter for Submission to Computational Biology and Chemistry (Elsevier)
+
+To: The Editor-in-Chief
+Computational Biology and Chemistry
+
+Subject: Submission of the research article "Sequence-Only Protein Secondary Structure Prediction under a CPU Budget: Accuracy–Latency Trade-offs of Frozen ESM-2 Probes and Lightweight Non-Pretrained Networks"
+
+Dear Editor,
+
+Please consider the enclosed manuscript by Roaissat Mohamed Zakaria for publication as a Research Article in Computational Biology and Chemistry.
+
+Accurate secondary structure predictors rely on multiple sequence alignments, whose database searches dominate run time. The manuscript presents a reproducible benchmark of five alignment-free predictors whose costs differ by more than two orders of magnitude: a windowed MLP, a hybrid CNN–BiLSTM, and frozen ESM-2 language models (8M and 35M parameters) with linear or MLP heads. The work does not propose a new architecture; its aim is to quantify accuracy–cost trade-offs for users without GPUs.
+
+All models were trained on the NetSurfP-2.0 training set after removing every chain with at least 25% identity to any test chain (MMseqs2), and evaluated with three seeds on CB513, TS115, CASP12, CASP13 and CASP14. The main findings are:
+
+1. Frozen ESM-2 with a small MLP head reached 75.92% (8M) and 80.12% (35M) Q3 on CB513, compared with 67.95% for the windowed MLP and 71.45% for the hybrid CNN–BiLSTM.
+2. An MLP head improved on a linear probe by 1.61 points on CB513.
+3. On a two-thread CPU, the hybrid network was 5.8x faster than the ESM-2 8M pipeline but recovered only 43.9% of its accuracy gain over the windowed MLP; on GPU the ordering reversed.
+4. Pretrained models lost more accuracy than non-pretrained baselines from CB513 to the small CASP12 and CASP14 sets, suggesting caution when CB513 is used as the main benchmark for language-model-based predictors.
+
+All differences were tested with residue-level McNemar, protein-level Wilcoxon and protein-level bootstrap tests. The notebook, hyper-parameters, logs and per-residue predictions are publicly available at https://github.com/ZAKI2828/pssp-efficiency-benchmark.
+
+This manuscript is original, has not been published previously, and is not under consideration elsewhere. The author declares no competing interests.
+
+Sincerely,
+
+Roaissat Mohamed Zakaria
+Independent Researcher, Algeria
+Email: roaissatmohamedzakaria@gmail.com

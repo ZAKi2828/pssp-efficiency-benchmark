@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "min_identity": 0.25,
+  "min_coverage": 0.5,
+  "n_train_before": 10792,
+  "n_removed": 202,
+  "per_test_set": {
+    "CB513": 205,
+    "TS115": 49,
+    "CASP12": 0,
+    "CASP13": 0,
+    "CASP14": 0
+  },
+  "n_train_after": 10590
+}

@@ -1,0 +1,72 @@
+{
+  "TRAIN": {
+    "n_chains": 9531,
+    "n_residues": 2437114,
+    "n_evaluated_residues": 2279339,
+    "frac_H": 0.3898858397105477,
+    "frac_E": 0.22566937169065243,
+    "frac_C": 0.38444478859879994,
+    "min_len": 20,
+    "max_len": 1632
+  },
+  "VAL": {
+    "n_chains": 1059,
+    "n_residues": 266334,
+    "n_evaluated_residues": 249900,
+    "frac_H": 0.37185274109643857,
+    "frac_E": 0.23681472589035615,
+    "frac_C": 0.3913325330132053,
+    "min_len": 23,
+    "max_len": 1491
+  },
+  "CB513": {
+    "n_chains": 511,
+    "n_residues": 144011,
+    "n_evaluated_residues": 83427,
+    "frac_H": 0.3488319129298668,
+    "frac_E": 0.22402819231184148,
+    "frac_C": 0.42713989475829167,
+    "min_len": 20,
+    "max_len": 874
+  },
+  "TS115": {
+    "n_chains": 115,
+    "n_residues": 29704,
+    "n_evaluated_residues": 27501,
+    "frac_H": 0.42329369841096687,
+    "frac_E": 0.19562924984546015,
+    "frac_C": 0.381077051743573,
+    "min_len": 43,
+    "max_len": 1111
+  },
+  "CASP12": {
+    "n_chains": 20,
+    "n_residues": 6801,
+    "n_evaluated_residues": 6004,
+    "frac_H": 0.3572618254497002,
+    "frac_E": 0.22485009993337776,
+    "frac_C": 0.41788807461692207,
+    "min_len": 76,
+    "max_len": 1494
+  },
+  "CASP13": {
+    "n_chains": 12,
+    "n_residues": 2383,
+    "n_evaluated_residues": 2280,
+    "frac_H": 0.31359649122807015,
+    "frac_E": 0.2596491228070175,
+    "frac_C": 0.4267543859649123,
+    "min_len": 41,
+    "max_len": 372
+  },
+  "CASP14": {
+    "n_chains": 18,
+    "n_residues": 3626,
+    "n_evaluated_residues": 2718,
+    "frac_H": 0.36019131714495956,
+    "frac_E": 0.20897718910963944,
+    "frac_C": 0.43083149374540103,
+    "min_len": 74,
+    "max_len": 922
+  }
+}
