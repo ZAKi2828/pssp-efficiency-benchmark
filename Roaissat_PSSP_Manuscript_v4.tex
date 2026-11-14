@@ -50,7 +50,7 @@ Protein secondary structure prediction \sep MSA-free \sep ESM-2 \sep Frozen-back
 %======================================================================
 \section{Introduction}
 \label{sec:intro}
-Assigning each residue of a protein to helix ($H$), strand ($E$) or coil ($C$) is a long-standing intermediate task in structural bioinformatics~\citep{rost1993prediction,kabsch1983dictionary}. For three decades the most accurate predictors have used evolutionary profiles derived from multiple sequence alignments (MSAs), as in PSIPRED~\citep{jones1999protein,buchan2019psipred}, JPred4~\citep{drozdetskiy2015jpred4} and NetSurfP-2.0~\citep{klausen2019netsurfp}. Profile construction requires iterative database searches that dominate the run time and degrade for sequences with few homologues, such as orphan or designed proteins~\citep{singh2021spot1d,elnaggar2022prottrans}.
+Assigning each residue of a protein to helix ($H$), strand ($E$) or coil ($C$) is a long-standing intermediate task in structural bioinformatics~\citep{rost1993prediction,kabsch1983dictionary}. For three decades the most accurate predictors have used evolutionary profiles derived from multiple sequence alignments (MSAs), as in PSIPRED~\citep{jones1999protein,buchan2019psipred}, JPred4~\citep{drozdetskiy2015jpred4} and NetSurfP-2.0~\citep{klausen2019netsurfp}. Profile construction requires iterative database searches that dominate the run time and degrade for sequences with few homologs, such as orphan or designed proteins~\citep{singh2021spot1d,elnaggar2022prottrans}.
 
 Single-sequence (MSA-free) predictors avoid this step. They range from networks trained only on one-hot or physicochemical encodings~\citep{singh2021spot1d} to predictors built on protein language models (pLMs) such as ESM-1b, ESM-2 and ProtT5~\citep{rives2021biological,lin2023evolutionary,elnaggar2022prottrans,hoie2022netsurfp3}. Large pLMs approach MSA-based accuracy but are expensive to run, which matters for users without GPUs and for screening large sequence collections.
 
@@ -92,9 +92,9 @@ CASP14 & 18  & 2,718 \\
 \end{table}
 
 \subsection{Models}
-All models were implemented in PyTorch and trained with three seeds (42, 123, 2026), which control weight initialisation and data order. Exact hyper-parameters are listed in Table~\ref{tab:hyperparams}. All models were trained with per-residue cross-entropy, early stopping on validation loss, and the checkpoint with the lowest validation loss was evaluated.
+All models were implemented in PyTorch and trained with three seeds (42, 123, 2026), which control weight initialization and data order. Exact hyper-parameters are listed in Table~\ref{tab:hyperparams}. All models were trained with per-residue cross-entropy, early stopping on validation loss, and the checkpoint with the lowest validation loss was evaluated.
 
-\paragraph{WindowMLP} Each residue is represented by a symmetric window of 17 residues, one-hot encoded with 21 channels (20 amino acids plus one channel for unknown residues and padding), giving 357 inputs. The network is Linear(357$\to$128)--BatchNorm--ReLU--Dropout(0.2)--Linear(128$\to$64)--BatchNorm--ReLU--Dropout(0.2)--Linear(64$\to$3); the two linear layers that precede batch normalisation have no bias. It has 54,467 trainable parameters.
+\paragraph{WindowMLP} Each residue is represented by a symmetric window of 17 residues, one-hot encoded with 21 channels (20 amino acids plus one channel for unknown residues and padding), giving 357 inputs. The network is Linear(357$\to$128)--BatchNorm--ReLU--Dropout(0.2)--Linear(128$\to$64)--BatchNorm--ReLU--Dropout(0.2)--Linear(64$\to$3); the two linear layers that precede batch normalization have no bias. It has 54,467 trainable parameters.
 
 \paragraph{Hybrid 1D-CNN--BiLSTM} The one-hot sequence (21 channels) passes through three parallel 1D convolutions with kernel sizes 3, 5 and 7 (42, 42 and 44 channels; 128 in total), BatchNorm, ReLU and channel-wise (spatial) dropout ($p=0.3$), then a two-layer bidirectional LSTM (hidden size 128 per direction, inter-layer dropout 0.3) on packed sequences, LayerNorm(256), and a head Linear(256$\to$64)--ReLU--Dropout(0.3)--Linear(64$\to$3). It has 690,519 trainable parameters.
 
@@ -125,7 +125,7 @@ ESM-2 (35M) MLP head & Adam & $10^{-3}$ & 0 & 4,096 res. & 30 & 4 & 21/17, 24/21
     \item \textbf{SOV'99}: the segment overlap score of \citet{zemla1999modified}, computed per chain on the evaluated residues and averaged over chains.
     \item \textbf{Macro-F1}: unweighted mean of the per-class F1 scores.
     \item \textbf{$\beta$--coil error}: (true $E$ predicted as $C$ + true $C$ predicted as $E$) / (true $E$ + true $C$), in percent.
-    \item \textbf{Cost}: total and trainable parameters; size of the fp32 weights; and end-to-end latency per sequence at batch size 1, measured from the amino-acid string (including encoding or tokenisation) on the first 100 (GPU) or 50 (CPU) CB513 chains after three warm-up calls. CPU timings used two threads and were measured once (seed 42); GPU timings are averaged over seeds. For timing, ESM-2 inputs were truncated to 1,022 residues.
+    \item \textbf{Cost}: total and trainable parameters; size of the fp32 weights; and end-to-end latency per sequence at batch size 1, measured from the amino-acid string (including encoding or tokenization) on the first 100 (GPU) or 50 (CPU) CB513 chains after three warm-up calls. CPU timings used two threads and were measured once (seed 42); GPU timings are averaged over seeds. For timing, ESM-2 inputs were truncated to 1,022 residues.
 \end{enumerate}
 All experiments ran on Google Colab with an NVIDIA Tesla T4 GPU and an Intel Xeon CPU at 2.00\,GHz (2 vCPUs), using Python 3.13.16, PyTorch 2.14.1 (CUDA 13.0) and Transformers 5.22.1.
 
@@ -137,7 +137,7 @@ Paired comparisons used the CB513 predictions of seed 42 (83,427 residues, 509 c
 \label{sec:results}
 
 \subsection{Accuracy across benchmarks}
-Table~\ref{tab:results} and Fig.~\ref{fig:benchmarks} summarise accuracy. The ranking WindowMLP $<$ hybrid $<$ ESM-2 (8M) linear $<$ ESM-2 (8M) MLP $<$ ESM-2 (35M) MLP held on CB513, TS115, CASP12 and CASP13. On CASP14 the ESM-2 (8M) linear probe and MLP head were practically tied ($72.66\%$ vs.\ $72.79\%$). Seed-to-seed variation was small for the frozen-backbone probes ($\leq 0.20$ points in $Q_3$ on every set) because only the head is trained; it was larger for the hybrid network on the small CASP13 and CASP14 sets ($1.79$ and $0.96$ points).
+Table~\ref{tab:results} and Fig.~\ref{fig:benchmarks} summarize accuracy. The ranking WindowMLP $<$ hybrid $<$ ESM-2 (8M) linear $<$ ESM-2 (8M) MLP $<$ ESM-2 (35M) MLP held on CB513, TS115, CASP12 and CASP13. On CASP14 the ESM-2 (8M) linear probe and MLP head were practically tied ($72.66\%$ vs.\ $72.79\%$). Seed-to-seed variation was small for the frozen-backbone probes ($\leq 0.20$ points in $Q_3$ on every set) because only the head is trained; it was larger for the hybrid network on the small CASP13 and CASP14 sets ($1.79$ and $0.96$ points).
 
 \begin{table*}[htbp]
 \centering
@@ -260,11 +260,11 @@ On a two-thread CPU, the frozen ESM-2 (8M) pipeline processed about 12 chains pe
 \subsection{Linear probe versus MLP head}
 The MLP head added a consistent but modest $1.0$--$1.6$ points on four of five sets. This indicates that most of the three-state information in the last-layer ESM-2 (8M) embedding is linearly accessible, and that a small non-linear head mainly refines strand--coil and helix--coil boundaries (lower $\beta$--coil error). We did not test embeddings from intermediate layers, which are often more informative for structural probing, so these numbers are likely lower bounds for frozen ESM-2 features.
 
-\subsection{Generalisation from CB513 to CASP targets}
+\subsection{Generalization from CB513 to CASP targets}
 Moving from CB513 to CASP14, $Q_3$ changed by $-1.41$ points for WindowMLP, $+0.11$ for the hybrid network, $-1.65$ for the ESM-2 (8M) linear probe, $-3.13$ for the ESM-2 (8M) MLP head and $-5.36$ for ESM-2 (35M); on CASP12 the corresponding changes were $-1.08$, $-1.62$, $-2.01$, $-2.62$ and $-5.28$. The pretrained models therefore lost more accuracy than the non-pretrained ones, and the loss grew with backbone size. One possible explanation is that CB513 chains, which are old and well represented in sequence databases, benefit from the pLM pretraining corpus (UniRef50), whereas newer CASP targets do not. Our data cannot establish this: CASP12 and CASP14 contain only 20 and 18 chains, the two benchmarks differ in composition, and TS115 and CASP13 did not show the same pattern as strongly. The observation nevertheless suggests that CB513 alone may overstate the advantage of pLM-based predictors, and that newer, larger temporally held-out benchmarks are needed.
 
 \subsection{Limitations}
-(i) A single train/validation split was used, and seeds varied only initialisation and data order. (ii) The CASP sets are small. (iii) Only last-layer embeddings and frozen backbones were studied; fine-tuning or layer selection would likely raise ESM-2 accuracy. (iv) The homology filter depends on MMseqs2 sensitivity, and filtering against the pLM pretraining corpus was not possible. (v) CPU timings were single runs on a shared cloud virtual machine, and peak inference memory was not measured; we report weight size instead.
+(i) A single train/validation split was used, and seeds varied only initialization and data order. (ii) The CASP sets are small. (iii) Only last-layer embeddings and frozen backbones were studied; fine-tuning or layer selection would likely raise ESM-2 accuracy. (iv) The homology filter depends on MMseqs2 sensitivity, and filtering against the pLM pretraining corpus was not possible. (v) CPU timings were single runs on a shared cloud virtual machine, and peak inference memory was not measured; we report weight size instead.
 
 %======================================================================
 \section{Conclusion}
@@ -272,7 +272,13 @@ Moving from CB513 to CASP14, $Q_3$ changed by $-1.41$ points for WindowMLP, $+0.
 In a controlled benchmark with homology-filtered training data, frozen ESM-2 embeddings with small heads were the most accurate MSA-free predictors tested ($75.92\%$ and $80.12\%$ CB513 $Q_3$ for the 8M and 35M backbones), while a compact CNN--BiLSTM offered a $5.8\times$ CPU speed-up over ESM-2 (8M) at a cost of $4.47$ points. A non-linear head added a modest $1.6$ points over a linear probe. The larger drop of pretrained models from CB513 to recent CASP targets calls for caution when CB513 is the main benchmark for language-model-based predictors. All code, logs and per-residue predictions are released to allow the analysis to be reproduced and extended.
 
 \section*{Declaration of Competing Interest}
-The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+Declarations of interest: none. The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
+
+\section*{CRediT Authorship Contribution Statement}
+\textbf{Roaissat Mohamed Zakaria:} Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Writing -- original draft, Writing -- review \& editing, Visualization.
 
 \section*{Declaration of Generative AI and AI-Assisted Technologies in the Writing Process}
 During the preparation of this work, the author used large language model assistants for code drafting and review, text editing and formatting. After using these tools, the author reviewed and edited the content, ran all experiments, and takes full responsibility for the content of the publication.
