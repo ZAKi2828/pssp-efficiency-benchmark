@@ -3,5 +3,5 @@ Highlights:
 • Five MSA-free secondary structure predictors benchmarked on five test sets.
 • Training chains with >=25% identity to any test chain removed by MMseqs2.
 • Frozen ESM-2 35M with an MLP head reaches 80.12% Q3 on CB513.
-• Hybrid CNN-BiLSTM is 5.8x faster than ESM-2 8M on CPU but 4.5 points lower.
-• Pretrained models drop more than baselines from CB513 to CASP12/CASP14.
+• Hybrid CNN-BiLSTM is 9x faster than ESM-2 8M on CPU but 4.5 points lower.
+• Small CASP sets give 95% intervals up to 11 points wide; trends are mixed.

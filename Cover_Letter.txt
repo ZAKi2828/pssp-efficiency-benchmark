@@ -15,10 +15,10 @@ All models were trained on the NetSurfP-2.0 training set after removing every ch
 
 1. Frozen ESM-2 with a small MLP head reached 75.92% (8M) and 80.12% (35M) Q3 on CB513, compared with 67.95% for the windowed MLP and 71.45% for the hybrid CNN–BiLSTM.
 2. An MLP head improved on a linear probe by 1.61 points on CB513.
-3. On a two-thread CPU, the hybrid network was 5.8x faster than the ESM-2 8M pipeline but recovered only 43.9% of its accuracy gain over the windowed MLP; on GPU the ordering reversed.
-4. Pretrained models lost more accuracy than non-pretrained baselines from CB513 to the small CASP12 and CASP14 sets, suggesting caution when CB513 is used as the main benchmark for language-model-based predictors.
+3. On a two-thread CPU, the hybrid network was about 9x faster than the ESM-2 8M pipeline (median of within-round ratios over ten interleaved timing rounds) but recovered only 43.9% of its accuracy gain over the windowed MLP; on GPU the ordering reversed. Every model ran in under 1 GB of RAM.
+4. On the small CASP12, CASP13 and CASP14 sets, chain-level confidence intervals were wide (up to 11 points) and the change from CB513 differed between sets (pretrained models dropped more on CASP12 and CASP14, but not on CASP13), suggesting caution when CB513 alone is used to judge language-model-based predictors.
 
-All differences were tested with residue-level McNemar, protein-level Wilcoxon and protein-level bootstrap tests. The notebook, hyper-parameters, logs and per-residue predictions are publicly available at https://github.com/ZAKI2828/pssp-efficiency-benchmark.
+All ten pairwise model differences on CB513 remained significant after Holm correction in residue-level McNemar, protein-level Wilcoxon and protein-level bootstrap tests. The notebook, hyper-parameters, logs and per-residue predictions are publicly available at https://github.com/ZAKI2828/pssp-efficiency-benchmark.
 
 This manuscript is original, has not been published previously, and is not under consideration elsewhere. The author declares no competing interests.
 

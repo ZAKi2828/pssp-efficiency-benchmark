@@ -3,6 +3,7 @@ Outputs:
   results_real/fig_*.png                      (used by the LaTeX source)
   submission/Figure_1..3.{png,pdf}            (separate artwork files for submission)
   submission/Graphical_abstract.{tiff,pdf}    (single-panel graphical abstract)
+Run analysis/pairwise_stats.py first (it writes results_real/q3_bootstrap_ci.csv).
 """
 import json, os
 import numpy as np, pandas as pd, matplotlib
@@ -15,6 +16,8 @@ order = ['WindowMLP', 'Hybrid 1D-CNN-BiLSTM', 'ESM-2 (8M) Linear Probe', 'ESM-2 
 col = dict(zip(order, ['#d95f02', '#1b9e77', '#386cb0', '#7570b3', '#e7298a']))
 g = r.groupby('model'); M = g.mean(numeric_only=True); S = g.std(numeric_only=True)
 cpu = r[r.seed == 42].set_index('model')
+EFF = pd.read_csv(f'{R}/efficiency/summary.csv')
+cpu_lat = EFF[EFF.device == 'cpu'].set_index('model')['mean']   # ms per chain, mean over interleaved rounds
 plt.rcParams.update({'font.size': 10})
 
 def save(fig, name, fig_no):
@@ -27,10 +30,12 @@ def save(fig, name, fig_no):
 sets = ['CB513', 'TS115', 'CASP12', 'CASP13', 'CASP14']
 n = [int(r[f'{s}_n_proteins'].iloc[0]) for s in sets]
 fig, ax = plt.subplots(figsize=(10, 4.6)); w = .16; x = np.arange(len(sets))
+CI = pd.read_csv(f'{R}/q3_bootstrap_ci.csv').set_index(['test_set', 'model'])   # from analysis/pairwise_stats.py
 for i, m in enumerate(order):
-    ax.bar(x + (i - 2) * w, [M.loc[m, f'{s}_Q3'] for s in sets], w, yerr=[S.loc[m, f'{s}_Q3'] for s in sets],
-           color=col[m], edgecolor='k', lw=.5, capsize=2, label=m)
-ax.set_xticks(x); ax.set_xticklabels([f'{s}\n(n={k})' for s, k in zip(sets, n)]); ax.set_ylim(60, 85); ax.set_ylabel('$Q_3$ (%)')
+    q = [M.loc[m, f'{s}_Q3'] for s in sets]
+    err = [[qq - CI.loc[(s, m), 'CI_low'] for s, qq in zip(sets, q)], [CI.loc[(s, m), 'CI_high'] - qq for s, qq in zip(sets, q)]]
+    ax.bar(x + (i - 2) * w, q, w, yerr=err, color=col[m], edgecolor='k', lw=.5, capsize=2, label=m)
+ax.set_xticks(x); ax.set_xticklabels([f'{s}\n(n={k})' for s, k in zip(sets, n)]); ax.set_ylim(55, 88); ax.set_ylabel('$Q_3$ (%), 95% chain-level bootstrap CI')
 ax.legend(fontsize=8, ncol=3, frameon=False, loc='upper center', bbox_to_anchor=(.5, 1.15))
 ax.grid(axis='y', ls='--', alpha=.4); ax.spines[['top', 'right']].set_visible(False)
 fig.tight_layout(); save(fig, 'fig_benchmarks', 1)
@@ -39,10 +44,10 @@ fig.tight_layout(); save(fig, 'fig_benchmarks', 1)
 fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 4.6))
 for m in order:
     q, s = M.loc[m, 'CB513_Q3'], S.loc[m, 'CB513_Q3']
-    a1.errorbar(cpu.loc[m, 'CPU_ms_per_seq'], q, yerr=s, fmt='o', ms=10, color=col[m], mec='k', label=m)
+    a1.errorbar(cpu_lat[m], q, yerr=s, fmt='o', ms=10, color=col[m], mec='k', label=m)
     a2.errorbar(cpu.loc[m, 'Weights_MB_fp32'], q, yerr=s, fmt='o', ms=10, color=col[m], mec='k', label=m)
 a1.set_xscale('log'); a2.set_xscale('log')
-a1.set_xlabel('CPU latency per sequence (ms, 2 threads, batch 1, log scale)')
+a1.set_xlabel('CPU latency per chain (ms, 2 threads, batch 1, log scale)')
 a2.set_xlabel('Model weights (MB, fp32, log scale)')
 for a, t in [(a1, '(a)'), (a2, '(b)')]:
     a.set_ylabel('CB513 $Q_3$ (%)'); a.grid(ls='--', alpha=.4); a.spines[['top', 'right']].set_visible(False)
@@ -70,13 +75,13 @@ off = {'WindowMLP': (8, 6), 'Hybrid 1D-CNN-BiLSTM': (8, -12), 'ESM-2 (8M) Linear
        'ESM-2 (8M) MLP Head': (-8, 6), 'ESM-2 (35M) MLP Head': (-8, -4)}
 fig, ax = plt.subplots(figsize=(5.2, 2.6))
 for m in order:
-    xv, yv = cpu.loc[m, 'CPU_ms_per_seq'], M.loc[m, 'CB513_Q3']
+    xv, yv = cpu_lat[m], M.loc[m, 'CB513_Q3']
     ax.scatter(xv, yv, s=60, color=col[m], edgecolor='k', zorder=3)
     dx, dy = off[m]
     ax.annotate(f'{short[m]} ({yv:.1f}%)', (xv, yv), xytext=(dx, dy), textcoords='offset points', fontsize=7.5,
                 ha='left' if dx > 0 else 'right', va='center')
-ax.set_xscale('log'); ax.set_xlim(0.6, 900); ax.set_ylim(66, 82)
-ax.set_xlabel('CPU latency per sequence (ms, log scale)', fontsize=8)
+ax.set_xscale('log'); ax.set_xlim(0.8, 1500); ax.set_ylim(66, 82)
+ax.set_xlabel('CPU latency per chain (ms, log scale)', fontsize=8)
 ax.set_ylabel('CB513 $Q_3$ (%)', fontsize=8); ax.tick_params(labelsize=7.5)
 ax.set_title('MSA-free secondary structure prediction: accuracy vs. CPU cost', fontsize=8.5)
 ax.grid(ls='--', alpha=.4); ax.spines[['top', 'right']].set_visible(False)
