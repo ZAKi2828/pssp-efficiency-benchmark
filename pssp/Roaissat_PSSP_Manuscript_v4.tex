@@ -1,0 +1,439 @@
+\documentclass[preprint,12pt,authoryear]{elsarticle}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xurl}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\journal{Computational Biology and Chemistry}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{Sequence-Only Protein Secondary Structure Prediction under a CPU Budget: Accuracy--Latency Trade-offs of Frozen ESM-2 Probes and Lightweight Non-Pretrained Networks}
+
+\author[inst1]{Roaissat Mohamed Zakaria\corref{cor1}}
+\ead{roaissatmohamedzakaria@gmail.com}
+
+\cortext[cor1]{Corresponding author.}
+\affiliation[inst1]{organization={Independent Researcher},
+            city={Ain El Melh},
+            postcode={28004},
+            state={M'Sila},
+            country={Algeria}}
+
+\begin{abstract}
+Accurate protein secondary structure prediction (PSSP) traditionally relies on evolutionary profiles from multiple sequence alignments (MSAs), whose database searches dominate run time. We present a reproducible, multi-seed benchmark of five MSA-free predictors that differ by orders of magnitude in cost: a windowed multilayer perceptron (WindowMLP), a hybrid 1D-CNN--BiLSTM, and frozen ESM-2 protein language models (8M and 35M parameters) with linear or MLP classification heads. All models were trained on the NetSurfP-2.0 training set after removing every chain with $\geq 25\%$ identity to any test chain (MMseqs2), and evaluated on CB513, TS115, CASP12, CASP13 and CASP14 over three seeds. On CB513, $Q_3$ rose from $67.95 \pm 0.05\%$ (WindowMLP) and $71.45 \pm 0.22\%$ (hybrid) to $75.92 \pm 0.03\%$ (frozen ESM-2 8M + MLP head) and $80.12 \pm 0.05\%$ (frozen ESM-2 35M + MLP head). Replacing a linear probe with a 20\,739-parameter MLP head added $+1.61$ points. On a two-thread CPU, the hybrid network ran about $9\times$ faster than the ESM-2 8M pipeline (19.1 vs.\ 141.4\,ms per chain) with $10.8\times$ fewer parameters, but recovered only $43.9\%$ of the accuracy gain of ESM-2 8M over WindowMLP; ESM-2 35M added $+4.20$ points at $3.4\times$ the CPU latency of ESM-2 8M. All ten pairwise differences on CB513 remained significant after Holm correction in residue-level McNemar, protein-level Wilcoxon and protein-level bootstrap tests. Pretrained models lost more accuracy than non-pretrained ones from CB513 to the small CASP12 and CASP14 sets (but not to CASP13), a pattern that warrants caution when interpreting CB513 results for language-model-based predictors.
+\end{abstract}
+
+\begin{graphicalabstract}
+\includegraphics[width=\textwidth]{submission/Graphical_abstract.png}
+\end{graphicalabstract}
+
+\begin{highlights}
+\item Five MSA-free secondary structure predictors benchmarked on five test sets.
+\item Training chains with $\geq$25\% identity to any test chain removed by MMseqs2.
+\item Frozen ESM-2 35M with an MLP head reaches 80.12\% Q3 on CB513.
+\item Hybrid CNN-BiLSTM is 9x faster than ESM-2 8M on CPU but 4.5 points lower.
+\item Small CASP sets give 95\% intervals up to 11 points wide; trends are mixed.
+\end{highlights}
+
+\begin{keyword}
+Protein secondary structure prediction \sep MSA-free \sep ESM-2 \sep Frozen-backbone probing \sep CPU inference \sep Benchmark
+\end{keyword}
+
+\end{frontmatter}
+
+%======================================================================
+\section{Introduction}
+\label{sec:intro}
+Assigning each residue of a protein to helix ($H$), strand ($E$) or coil ($C$) is a long-standing intermediate task in structural bioinformatics~\citep{rost1993prediction,kabsch1983dictionary}. For three decades the most accurate predictors have used evolutionary profiles derived from multiple sequence alignments (MSAs), as in PSIPRED~\citep{jones1999protein,buchan2019psipred}, JPred4~\citep{drozdetskiy2015jpred4}, DeepCNF~\citep{wang2016protein}, SPIDER3~\citep{heffernan2017capturing}, SPOT-1D~\citep{hanson2019improving} and NetSurfP-2.0~\citep{klausen2019netsurfp}; see \citet{rost2001review} and \citet{yang2018sixty} for reviews. Profile construction requires iterative database searches with tools such as PSI-BLAST~\citep{altschul1997gapped} or HHblits~\citep{remmert2012hhblits} that dominate the run time and degrade for sequences with few homologs, such as orphan or designed proteins~\citep{singh2021spot1d,elnaggar2022prottrans}.
+
+Single-sequence (MSA-free) predictors avoid this step. They range from networks trained only on one-hot or physicochemical encodings~\citep{singh2021spot1d} to predictors built on protein language models (pLMs) such as SeqVec, ESM-1b, ESM-2 and ProtT5~\citep{heinzinger2019modeling,rives2021biological,lin2023evolutionary,elnaggar2022prottrans,hoie2022netsurfp3}. Large pLMs approach MSA-based accuracy but are expensive to run, a limitation for users without GPUs and for screening large sequence collections. Three-dimensional structure prediction is now accurate~\citep{jumper2021highly,lin2023evolutionary}, but it costs far more per sequence than three-state secondary structure prediction.
+
+We benchmark existing small MSA-free predictors that can run on a commodity CPU, without proposing a new architecture, and measure their accuracy--cost trade-off. The study contributes (1) one protocol, with the same homology-filtered training data, evaluation masks, seeds and stopping rule, for five predictors whose CPU cost spans more than two orders of magnitude; (2) end-to-end latency at batch size 1 on CPU and GPU, reported with parameter counts and weight size, so that accuracy can be read against deployment cost; (3) a linear-versus-MLP probe ablation and an 8M-versus-35M backbone comparison on frozen ESM-2 features; and (4) results on five test sets with chain-level bootstrap confidence intervals, which show how far conclusions drawn from CB513 carry over to small, newer CASP sets. Code, logs and per-residue predictions are released. We ask four questions:
+\begin{enumerate}
+    \item How much accuracy do frozen embeddings from the two smallest ESM-2 models (8M and 35M parameters) provide over non-pretrained networks trained on the same data?
+    \item How much does a small non-linear (MLP) head add over a linear probe on the same frozen embeddings?
+    \item Where does a compact hybrid CNN--BiLSTM sit on the accuracy--latency frontier?
+    \item Are the conclusions stable across benchmarks of different age and size (CB513, TS115, CASP12--14)?
+\end{enumerate}
+
+%======================================================================
+\section{Materials and Methods}
+\label{sec:methods}
+
+\subsection{Data and homology filtering}
+We used the NetSurfP-2.0 training set and the CB513~\citep{cuff1999evaluation}, TS115~\citep{yang2018sixty}, CASP12, CASP13 and CASP14 test sets~\citep{moult2018critical,kryshtafovych2021critical} as distributed in the public Hugging Face dataset \nolinkurl{proteinea/secondary_structure_prediction}~\citep{proteinea2023dataset}, which provides sequences, 8-state DSSP labels and per-residue evaluation masks. The training file contained 10\,792 chains.
+
+To remove homology between training and test data, we searched all test chains against all training chains with MMseqs2~\citep{steinegger2017mmseqs2} (\texttt{easy-search}, sensitivity 7.5, E-value $\leq 10^{-3}$) and removed every training chain that aligned to any test chain with $\geq 25\%$ sequence identity and $\geq 50\%$ coverage of both sequences. Hits were found for 205 CB513 and 49 TS115 query chains and for none of the CASP chains; 202 training chains were removed, leaving 10\,590. These were split once at random (seed 0) into 9531 training chains (2\,437\,114 residues) and 1059 validation chains; the same split was used for all models and seeds. The validation set was used only for early stopping.
+
+Eight-state DSSP labels were reduced to three states as $H \leftarrow \{H,G,I\}$, $E \leftarrow \{E,B\}$ and $C \leftarrow$ all other states. Following the dataset's masks, only residues flagged as structurally resolved were scored (for CB513, also restricted to residues inside the CB513 mask). Table~\ref{tab:data} lists the evaluated sets. The three CASP sets are small (12--20 chains), so their results carry substantial sampling uncertainty that is not captured by the seed standard deviations.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Evaluation sets after masking. Chains: chains with at least one evaluated residue.}
+\label{tab:data}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Set} & \textbf{Chains} & \textbf{Evaluated residues} \\
+\midrule
+CB513  & 509 & 83\,427 \\
+TS115  & 115 & 27\,501 \\
+CASP12 & 20  & 6004 \\
+CASP13 & 12  & 2280 \\
+CASP14 & 18  & 2718 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Models}
+All models were implemented in PyTorch~\citep{paszke2019pytorch} (ESM-2 loaded with Hugging Face Transformers~\citep{wolf2020transformers}) and trained with three seeds (42, 123, 2026), which control weight initialization and data order. Exact hyper-parameters are listed in Table~\ref{tab:hyperparams}; optimizers were Adam~\citep{kingma2014adam} and AdamW~\citep{loshchilov2017decoupled}. All models were trained with per-residue cross-entropy, early stopping on validation loss, and the checkpoint with the lowest validation loss was evaluated.
+
+\paragraph{WindowMLP} Each residue is represented by a symmetric window of 17 residues, one-hot encoded with 21 channels (20 amino acids plus one channel for unknown residues and padding), giving 357 inputs. The network is Linear(357$\to$128)--BatchNorm--ReLU--Dropout(0.2)--Linear(128$\to$64)--BatchNorm--ReLU--Dropout(0.2)--Linear(64$\to$3); the two linear layers that precede batch normalization have no bias. It has 54\,467 trainable parameters.
+
+\paragraph{Hybrid 1D-CNN--BiLSTM} The one-hot sequence (21 channels) passes through three parallel 1D convolutions with kernel sizes 3, 5 and 7 (42, 42 and 44 channels; 128 in total), BatchNorm, ReLU and channel-wise (spatial) dropout ($p=0.3$), then a two-layer bidirectional LSTM~\citep{hochreiter1997long,schuster1997bidirectional} (hidden size 128 per direction, inter-layer dropout 0.3) on packed sequences, LayerNorm(256), and a head Linear(256$\to$64)--ReLU--Dropout(0.3)--Linear(64$\to$3). It has 690\,519 trainable parameters.
+
+\paragraph{Frozen ESM-2 probes} We used \texttt{facebook/esm2\_t6\_8M\_UR50D} (6 layers, 20 attention heads, hidden size 320) and \texttt{facebook/esm2\_t12\_35M\_UR50D} (12 layers, 20 heads, hidden size 480)~\citep{lin2023evolutionary}. The backbones were loaded without the language-model head and pooling layer (7\,409\,081 and 33\,269\,521 parameters) and kept frozen. Per-residue embeddings from the last layer were computed once (mixed precision, float16 storage); chains longer than 1022 residues were embedded in consecutive 1022-residue segments. Two heads were trained on these embeddings: a linear probe, Linear($d \to 3$) (963 parameters for $d=320$), and an MLP head, Linear($d \to 64$)--ReLU--Dropout(0.2)--Linear(64$\to$3) (20\,739 parameters for $d=320$; 30\,979 for $d=480$). Because the head is applied independently to each residue, heads were trained on shuffled mini-batches of 4096 residues.
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Training hyper-parameters. Batch sizes are in sequences for WindowMLP and the hybrid model, and in residues for the ESM-2 heads. Epochs: epochs run / epoch of the selected checkpoint, for seeds 42, 123 and 2026.}
+\label{tab:hyperparams}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Model} & \textbf{Optimizer} & \textbf{LR} & \textbf{Weight decay} & \textbf{Batch} & \textbf{Max epochs} & \textbf{Patience} & \textbf{Epochs (run / best)} \\
+\midrule
+WindowMLP & Adam & $10^{-3}$ & $10^{-4}$ & 32 seq. & 20 & 3 & 16/13, 17/14, 17/14 \\
+Hybrid 1D-CNN--BiLSTM & AdamW & $10^{-3}$ & $10^{-4}$ & 16 seq. & 20 & 3 & 15/12, 19/16, 10/7 \\
+ESM-2 (8M) linear probe & Adam & $10^{-3}$ & 0 & 4096 res. & 30 & 4 & 11/7, 14/14, 12/12 \\
+ESM-2 (8M) MLP head & Adam & $10^{-3}$ & 0 & 4096 res. & 30 & 4 & 28/25, 23/23, 18/15 \\
+ESM-2 (35M) MLP head & Adam & $10^{-3}$ & 0 & 4096 res. & 30 & 4 & 21/17, 24/21, 28/24 \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+\subsection{Evaluation metrics}
+\begin{enumerate}
+    \item \textbf{$Q_3$}: percentage of correctly predicted evaluated residues, pooled over all chains of a test set.
+    \item \textbf{SOV'99}: the segment overlap score of \citet{zemla1999modified}, computed per chain on the evaluated residues and averaged over chains.
+    \item \textbf{Macro-F1}: unweighted mean of the per-class F1 scores.
+    \item \textbf{$\beta$--coil error}: (true $E$ predicted as $C$ + true $C$ predicted as $E$) / (true $E$ + true $C$), in percent.
+    \item \textbf{Cost}: total and trainable parameters; size of the fp32 weights; end-to-end latency per chain at batch size 1, measured from the amino-acid string (including encoding or tokenization) on the first 100 CB513 chains; and peak memory. Each model ran in its own process, and all processes were measured in ten interleaved rounds: in every round each model processed the 100 chains once, in a random model order that changed between rounds, while the other processes waited idle. We report the mean $\pm$ SD of the per-chain latency over rounds and, for speed ratios, the median and interquartile range (IQR) of the ratio computed within each round, so that slow periods of the shared machine affect both models of a ratio alike. CPU runs used two threads. Peak GPU memory is \texttt{torch.cuda.max\_memory\_allocated} during inference; peak process memory is the resident set size (RSS) sampled after every chain, and includes the Python and PyTorch runtime (about 507\,MB before any model was loaded). Latency and memory do not depend on the trained weight values, so these measurements used the real ESM-2 backbones and randomly initialized heads of identical architecture. For timing, ESM-2 inputs were truncated to 1022 residues. Single-run timings recorded during training on another Colab machine are kept in the repository but are not used here.
+\end{enumerate}
+All experiments ran on Google Colab with an NVIDIA Tesla T4 GPU and an Intel Xeon CPU at 2.00\,GHz (2 vCPUs), using Python 3.13.16, PyTorch 2.14.1 (CUDA 13.0) and Transformers 5.22.1.
+
+\subsection{Statistical tests}
+All ten pairwise comparisons between the five models were tested on CB513 (83\,427 residues, 509 chains). We report (i) McNemar's test~\citep{mcnemar1947note} with continuity correction on residue-level correct/incorrect outcomes; (ii) a two-sided Wilcoxon signed-rank test~\citep{wilcoxon1945individual} on per-chain $Q_3$, with $p$-values from the normal approximation; and (iii) a paired bootstrap~\citep{efron1979bootstrap} over whole chains ($B=10\,000$) of the difference in pooled $Q_3$, which accounts for the correlation of residues within a chain. The bootstrap $p$-value is two-sided; when no resample crossed zero we report $p \leq 1/B$. Within each test, $p$-values were adjusted for the ten comparisons with the Holm procedure~\citep{holm1979simple}. The tests were run separately on the predictions of each seed; tables report seed 42. For every model and test set we also computed a 95\% chain-level bootstrap confidence interval (CI) of $Q_3$ from the per-chain numbers of correct residues averaged over the three seeds.
+
+%======================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Accuracy across benchmarks}
+Table~\ref{tab:results} and Fig.~\ref{fig:benchmarks} summarize accuracy. The ranking WindowMLP $<$ hybrid $<$ ESM-2 (8M) linear $<$ ESM-2 (8M) MLP $<$ ESM-2 (35M) MLP held on CB513, TS115, CASP12 and CASP13. On CASP14 the ESM-2 (8M) linear probe and MLP head were practically tied ($72.66\%$ vs.\ $72.79\%$). Seed-to-seed variation was small for the frozen-backbone probes ($\leq 0.23$ points in $Q_3$ on every set) because only the head is trained; it was larger for the hybrid network on the small CASP13 and CASP14 sets ($1.79$ and $0.96$ points). Seed variation, however, understates the uncertainty that comes from the choice of test chains. The chain-level 95\% CIs (Table~\ref{tab:ci}) were 1.3--1.6 points wide on CB513 and 2.6--3.5 points on TS115, but 4.1--7.8, 8.6--11.2 and 5.1--6.2 points on CASP12, CASP13 and CASP14, so differences between neighboring models on the CASP sets are not resolved.
+
+\begin{table*}[htbp]
+\centering
+\scriptsize
+\caption{Accuracy (mean $\pm$ SD over three seeds). SOV'99, macro-F1 and $\beta$--coil error are on CB513.}
+\label{tab:results}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+\textbf{Model} & \textbf{CB513 $Q_3$} & \textbf{CB513 SOV'99} & \textbf{TS115 $Q_3$} & \textbf{CASP12 $Q_3$} & \textbf{CASP13 $Q_3$} & \textbf{CASP14 $Q_3$} & \textbf{Macro-F1} & \textbf{$\beta$--coil err.} \\
+\midrule
+WindowMLP & $67.95 \pm 0.05$ & $62.02 \pm 0.25$ & $70.20 \pm 0.11$ & $66.87 \pm 0.50$ & $66.62 \pm 0.40$ & $66.54 \pm 0.22$ & $66.44 \pm 0.06$ & $18.86 \pm 0.02$ \\
+Hybrid 1D-CNN--BiLSTM & $71.45 \pm 0.22$ & $67.66 \pm 0.40$ & $73.87 \pm 0.36$ & $69.83 \pm 0.30$ & $72.03 \pm 1.79$ & $71.56 \pm 0.96$ & $70.42 \pm 0.21$ & $18.45 \pm 0.20$ \\
+ESM-2 (8M) linear probe & $74.31 \pm 0.02$ & $67.46 \pm 0.10$ & $77.13 \pm 0.01$ & $72.30 \pm 0.11$ & $76.80 \pm 0.08$ & $72.66 \pm 0.20$ & $73.53 \pm 0.02$ & $17.43 \pm 0.02$ \\
+ESM-2 (8M) MLP head & $75.92 \pm 0.03$ & $70.08 \pm 0.34$ & $78.73 \pm 0.04$ & $73.30 \pm 0.23$ & $78.19 \pm 0.17$ & $72.79 \pm 0.20$ & $75.17 \pm 0.06$ & $16.34 \pm 0.02$ \\
+ESM-2 (35M) MLP head & $\mathbf{80.12 \pm 0.05}$ & $\mathbf{74.45 \pm 0.13}$ & $\mathbf{81.88 \pm 0.08}$ & $\mathbf{74.84 \pm 0.05}$ & $\mathbf{80.44 \pm 0.04}$ & $\mathbf{74.76 \pm 0.17}$ & $\mathbf{79.60 \pm 0.04}$ & $\mathbf{14.17 \pm 0.09}$ \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+\begin{table*}[htbp]
+\centering
+\scriptsize
+\caption{$Q_3$ (\%) with 95\% chain-level bootstrap confidence intervals ($B=10\,000$), computed from per-chain correct residues averaged over the three seeds. Number of chains: CB513 509, TS115 115, CASP12 20, CASP13 12, CASP14 18.}
+\label{tab:ci}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{CB513} & \textbf{TS115} & \textbf{CASP12} & \textbf{CASP13} & \textbf{CASP14} \\
+\midrule
+WindowMLP & 67.95 [67.30, 68.62] & 70.20 [68.83, 71.58] & 66.87 [63.59, 69.48] & 66.62 [61.36, 72.60] & 66.54 [63.62, 69.84] \\
+Hybrid 1D-CNN--BiLSTM & 71.45 [70.73, 72.19] & 73.87 [72.18, 75.66] & 69.83 [65.96, 73.77] & 72.03 [68.10, 76.73] & 71.56 [69.07, 74.91] \\
+ESM-2 (8M) linear probe & 74.31 [73.52, 75.10] & 77.13 [75.63, 78.65] & 72.30 [70.16, 74.45] & 76.80 [71.34, 82.51] & 72.66 [70.13, 75.64] \\
+ESM-2 (8M) MLP head & 75.92 [75.11, 76.73] & 78.73 [77.25, 80.22] & 73.30 [71.36, 75.49] & 78.19 [72.57, 83.68] & 72.79 [70.49, 75.63] \\
+ESM-2 (35M) MLP head & 80.12 [79.29, 80.93] & 81.88 [80.55, 83.16] & 74.84 [72.27, 77.82] & 80.44 [75.28, 85.33] & 74.76 [71.90, 78.09] \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.98\linewidth]{results_real/fig_benchmarks.png}
+\caption{$Q_3$ on the five test sets. Bars: mean over three seeds; error bars: 95\% chain-level bootstrap confidence intervals; $n$ = evaluated chains.}
+\label{fig:benchmarks}
+\end{figure}
+
+\subsection{Effect of the head and of backbone size}
+On frozen ESM-2 (8M) embeddings, the MLP head improved CB513 $Q_3$ over the linear probe by $+1.61$ points ($74.31\% \to 75.92\%$), SOV'99 by $+2.62$ points, and reduced the $\beta$--coil error from $17.43\%$ to $16.34\%$. The gain was consistent on TS115 ($+1.60$), CASP12 ($+1.00$) and CASP13 ($+1.39$), but negligible on CASP14 ($+0.13$). Moving from the 8M to the 35M backbone with the same head type added $+4.20$ points on CB513 and reduced the $\beta$--coil error to $14.17\%$. For every model, most $\beta$--coil errors were strands predicted as coil (Table~\ref{tab:perclass}).
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{Per-class F1 and directional $E/C$ confusion on CB513 (mean over three seeds, \%).}
+\label{tab:perclass}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{F1$_H$} & \textbf{F1$_E$} & \textbf{F1$_C$} & \textbf{$E\to C$} & \textbf{$C\to E$} \\
+\midrule
+WindowMLP & 71.63 & 57.42 & 70.28 & 29.69 & 13.18 \\
+Hybrid 1D-CNN--BiLSTM & 76.05 & 63.32 & 71.90 & 28.65 & 13.10 \\
+ESM-2 (8M) linear probe & 79.07 & 67.71 & 73.80 & 29.49 & 11.11 \\
+ESM-2 (8M) MLP head & 80.37 & 69.60 & 75.54 & 28.08 & 10.18 \\
+ESM-2 (35M) MLP head & 84.41 & 75.22 & 79.18 & 25.44 & 8.26 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cost and the accuracy--latency frontier}
+Table~\ref{tab:cost} and Fig.~\ref{fig:pareto} relate accuracy to cost. On CPU, mean latency spanned more than two orders of magnitude, from 1.50\,ms per chain (WindowMLP) to 478.3\,ms for ESM-2 (35M), a within-round ratio of 321. The hybrid network ran about $9\times$ faster than the ESM-2 (8M) pipeline (median within-round ratio 9.1, IQR 7.8--9.5; 19.1 vs.\ 141.4\,ms) and had $10.8\times$ fewer parameters (690\,519 vs.\ 7\,429\,820), but was $4.47$ points less accurate on CB513; it recovered $43.9\%$ of the $Q_3$ gain of ESM-2 (8M) + MLP over WindowMLP ($3.50$ of $7.97$ points). ESM-2 (35M) was $3.4\times$ slower than ESM-2 (8M) on CPU (IQR 3.25--3.41) and $4.5\times$ larger in weights. Latency was stable across rounds for all models (coefficient of variation $\leq 7\%$) except the hybrid network (41\%), whose mean was raised by two slow rounds; its median round latency was 15.5\,ms.
+
+On the T4 GPU the ordering differed: the batch-size-1 BiLSTM (15.9\,ms) was slower than the ESM-2 (8M) pipeline (9.0\,ms; within-round ratio 1.7), because the recurrent layers process residues sequentially. The speed advantage of the hybrid model is therefore specific to CPU deployment.
+
+Peak process memory during inference, including the Python and PyTorch runtime, was 525\,MB for WindowMLP, 606\,MB for the hybrid network, 822--865\,MB for the ESM-2 (8M) pipelines and 952\,MB for ESM-2 (35M), so every model ran in under 1\,GB of RAM. Peak GPU memory during inference ranged from 10.5\,MB (WindowMLP) to 169.8\,MB (ESM-2 35M).
+
+\begin{table*}[htbp]
+\centering
+\scriptsize
+\caption{Model size, end-to-end inference latency at batch size 1 on the first 100 CB513 chains, and peak memory. Latency: mean $\pm$ SD over ten interleaved rounds (two CPU threads; NVIDIA T4 GPU). Peak RSS includes the Python/PyTorch runtime (about 507\,MB before loading a model). Total parameters include the frozen ESM-2 backbone.}
+\label{tab:cost}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrcrcrr}
+\toprule
+\textbf{Model} & \textbf{Total params} & \textbf{Trainable params} & \textbf{Weights (MB)} & \textbf{CPU latency (ms)} & \textbf{CPU seq/s} & \textbf{GPU latency (ms)} & \textbf{Peak RSS (MB)} & \textbf{Peak GPU mem.\ (MB)} \\
+\midrule
+WindowMLP & 54\,467 & 54\,467 & 0.21 & $1.50 \pm 0.08$ & 664.9 & $1.09 \pm 0.12$ & 525 & 10.5 \\
+Hybrid 1D-CNN--BiLSTM & 690\,519 & 690\,519 & 2.63 & $19.07 \pm 7.84$ & 52.4 & $15.87 \pm 2.33$ & 606 & 52.6 \\
+ESM-2 (8M) linear probe & 7\,410\,044 & 963 & 28.27 & $137.75 \pm 2.58$ & 7.3 & $9.68 \pm 1.59$ & 865 & 58.9 \\
+ESM-2 (8M) MLP head & 7\,429\,820 & 20\,739 & 28.34 & $141.42 \pm 2.57$ & 7.1 & $9.03 \pm 1.31$ & 822 & 58.9 \\
+ESM-2 (35M) MLP head & 33\,300\,500 & 30\,979 & 127.03 & $478.34 \pm 30.70$ & 2.1 & $16.34 \pm 0.51$ & 952 & 169.8 \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+\begin{figure*}[htbp]
+\centering
+\includegraphics[width=0.98\textwidth]{results_real/fig_pareto.png}
+\caption{Accuracy--cost trade-off on CB513: (a) $Q_3$ vs.\ CPU latency per chain (two threads, batch size 1, mean over ten interleaved rounds); (b) $Q_3$ vs.\ fp32 weight size. Error bars: SD of $Q_3$ over three seeds (smaller than the markers).}
+\label{fig:pareto}
+\end{figure*}
+
+\subsection{Statistical significance}
+All ten pairwise differences on CB513 were significant under every test after Holm correction (Table~\ref{tab:stats}): adjusted $p < 10^{-64}$ for McNemar, $p < 10^{-14}$ for Wilcoxon and $p \leq 10^{-3}$ for the bootstrap. The same held for seeds 123 and 2026, for which the pooled $\Delta Q_3$ of each pair differed from seed 42 by at most 0.42 points. The smallest difference was between the ESM-2 (8M) MLP head and the linear probe ($+1.67$ points). The chain-level bootstrap intervals were wide relative to the seed standard deviations. On a test set of this size, the choice of chains contributes more uncertainty to the estimated differences than training randomness does.
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\caption{All pairwise comparisons on CB513 (seed 42; 83\,427 residues; 509 chains). $\Delta Q_3$: difference in pooled $Q_3$ (A $-$ B) with its 95\% chain-level bootstrap interval ($B=10\,000$). After Holm correction over the ten comparisons, every comparison had $p < 10^{-64}$ (McNemar), $p < 10^{-14}$ (Wilcoxon) and $p \leq 10^{-3}$ (bootstrap); results for all seeds are in \texttt{pairwise\_all.csv}.}
+\label{tab:stats}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccc}
+\toprule
+\textbf{Comparison (A vs.\ B)} & \textbf{McNemar $\chi^2$} & \textbf{Wilcoxon $W$} & \textbf{$\Delta Q_3$ [95\% CI]} \\
+\midrule
+Hybrid vs.\ WindowMLP & 703.5 & 23\,392.0 & $+3.54$ [$+3.08$, $+4.00$] \\
+ESM-2 (8M) linear vs.\ WindowMLP & 1627.4 & 16\,964.5 & $+6.28$ [$+5.67$, $+6.91$] \\
+ESM-2 (8M) MLP vs.\ WindowMLP & 2761.8 & 8708.0 & $+7.94$ [$+7.30$, $+8.64$] \\
+ESM-2 (35M) MLP vs.\ WindowMLP & 5438.4 & 3847.0 & $+12.05$ [$+11.31$, $+12.81$] \\
+ESM-2 (8M) linear vs.\ Hybrid & 381.4 & 34\,115.0 & $+2.73$ [$+2.21$, $+3.27$] \\
+ESM-2 (8M) MLP vs.\ Hybrid & 1072.8 & 22\,571.5 & $+4.40$ [$+3.84$, $+4.99$] \\
+ESM-2 (35M) MLP vs.\ Hybrid & 3245.7 & 8371.5 & $+8.51$ [$+7.81$, $+9.21$] \\
+ESM-2 (8M) MLP vs.\ ESM-2 (8M) linear & 322.2 & 19\,242.0 & $+1.67$ [$+1.43$, $+1.91$] \\
+ESM-2 (35M) MLP vs.\ ESM-2 (8M) linear & 1838.1 & 8028.5 & $+5.78$ [$+5.29$, $+6.26$] \\
+ESM-2 (35M) MLP vs.\ ESM-2 (8M) MLP & 1065.0 & 16\,474.5 & $+4.11$ [$+3.65$, $+4.57$] \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Training dynamics}
+Fig.~\ref{fig:loss_curves} shows the per-epoch training and validation losses for seed 42. Validation loss plateaued for all models; for the hybrid network it stopped improving after about 12 epochs while training loss kept decreasing, and early stopping selected the checkpoint before this divergence.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.98\linewidth]{results_real/fig_loss_curves.png}
+\caption{Per-residue cross-entropy on the training (solid) and validation (dashed) sets for seed 42. Stars mark the selected (lowest validation loss) checkpoint.}
+\label{fig:loss_curves}
+\end{figure}
+
+%======================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Context with published predictors}
+Published results come from different training sets, evaluation masks and protocols, so they can only orient the reader. The closest reference point is the ProtTrans study~\citep{elnaggar2022prottrans}, which also trained on the NetSurfP-2.0 data and reported CASP12 $Q_3$ of 82.0\% for MSA-based NetSurfP-2.0, 81.4\% for ProtT5-XL-U50, 76.9\% for ESM-1b (650M parameters) and 75.8\% for ProtBert-BFD. On the same set, our frozen ESM-2 (35M) probe reached 74.84\% and ESM-2 (8M) 73.30\%. Small frozen ESM-2 models thus remain several points below large pLMs and MSA-based tools. Their advantage is lower computational cost.
+
+\subsection{Choosing a model under a CPU budget}
+On a two-thread CPU, the frozen ESM-2 (8M) pipeline processed about 7 chains per second, the hybrid network about 52 and WindowMLP about 665, and all of them needed less than 1\,GB of RAM. When language-model accuracy is needed and about 0.15\,s per chain is acceptable, ESM-2 (8M) with an MLP head is a reasonable default, and ESM-2 (35M) buys a further $\approx 4$ points for a $3.4$-fold increase in latency. For high-throughput use, the hybrid network is about $9\times$ faster than ESM-2 (8M) on CPU but recovers only $43.9\%$ of the gain of ESM-2 (8M) over WindowMLP. Because the hybrid model was slower than ESM-2 (8M) on GPU, its advantage applies to CPU-only settings.
+
+\subsection{Linear probe versus MLP head}
+The MLP head added a consistent but modest $1.0$--$1.6$ points on four of five sets. This indicates that most of the three-state information in the last-layer ESM-2 (8M) embedding is linearly accessible, and that a small non-linear head mainly refines strand--coil and helix--coil boundaries (lower $\beta$--coil error). We did not test embeddings from intermediate layers, which are often more informative for structural probing, so these numbers are likely lower bounds for frozen ESM-2 features.
+
+\subsection{Generalization from CB513 to CASP targets}
+Moving from CB513 to CASP14, $Q_3$ changed by $-1.41$ points for WindowMLP, $+0.11$ for the hybrid network, $-1.65$ for the ESM-2 (8M) linear probe, $-3.13$ for the ESM-2 (8M) MLP head and $-5.36$ for ESM-2 (35M); on CASP12 the corresponding changes were $-1.08$, $-1.62$, $-2.01$, $-2.62$ and $-5.28$. The pretrained models therefore lost more accuracy than the non-pretrained ones, and the loss grew with backbone size. One possible explanation is that CB513 chains, which were deposited before 1999 and may have close relatives in the pLM pretraining corpus (UniRef50;~\citealp{suzek2015uniref}), could benefit from it, whereas newer CASP targets do not. Our data cannot establish this: CASP12 and CASP14 contain only 20 and 18 chains, the two benchmarks differ in composition, and the pattern did not hold on TS115, where all models scored $1.76$--$2.82$ points higher than on CB513, or on CASP13, where the pretrained models scored higher than on CB513 (e.g.\ $+2.27$ points for ESM-2 (8M) MLP) while WindowMLP dropped by $1.33$ points. The 95\% intervals on the CASP sets were wide (Table~\ref{tab:ci}). For ESM-2 (8M) MLP and ESM-2 (35M) MLP the CB513 estimate lies outside the CASP14 interval, whereas for the other three models it lies inside. These mixed results suggest that conclusions about pLM-based predictors should not rest on CB513 alone, and that larger temporally held-out test sets are needed.
+
+\subsection{Limitations}
+(i) A single train/validation split was used, and seeds varied only initialization and data order. (ii) The CASP sets are small (12--20 chains), and their 95\% intervals are 4--11 points wide. (iii) Only last-layer embeddings and frozen backbones were studied; fine-tuning or layer selection would likely raise ESM-2 accuracy. (iv) The homology filter depends on MMseqs2 sensitivity, and filtering against the pLM pretraining corpus was not possible. (v) Timings come from one shared cloud virtual machine; absolute latencies differed between Colab sessions, and only the within-round ratios should be taken as transferable. Peak RSS was sampled after each chain and may miss short transient peaks. (vi) All models used fixed hyper-parameters without per-model tuning, which may disadvantage some architectures. (vii) We did not measure the run time of MSA-based predictors on the same hardware; the cost of profile construction is taken from the literature.
+
+%======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+In a controlled benchmark with homology-filtered training data, frozen ESM-2 embeddings with small heads were the most accurate MSA-free predictors tested ($75.92\%$ and $80.12\%$ CB513 $Q_3$ for the 8M and 35M backbones), while a compact CNN--BiLSTM offered an approximately $9\times$ CPU speed-up over ESM-2 (8M) at a cost of $4.47$ points. Every model ran in under 1\,GB of RAM. A non-linear head added a modest $1.6$ points over a linear probe. On the small CASP sets the confidence intervals were wide and the change from CB513 differed between sets (larger drops for pretrained models on CASP12 and CASP14, but not on CASP13), so results on CB513 alone should be interpreted with caution for language-model-based predictors. All code, logs and per-residue predictions are released to allow the analysis to be reproduced and extended.
+
+\section*{Declaration of Competing Interest}
+Declarations of interest: none. The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Funding}
+This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors.
+
+\section*{CRediT Authorship Contribution Statement}
+\textbf{Roaissat Mohamed Zakaria:} Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Writing -- original draft, Writing -- review \& editing, Visualization.
+
+\section*{Declaration of generative AI and AI-assisted technologies in the manuscript preparation process}
+During the preparation of this work the author used Claude (Anthropic) to assist with drafting and reviewing the analysis code and with drafting, editing and proofreading the manuscript text. After using this tool, the author reviewed and edited the content as needed and takes full responsibility for the content of the published article.
+
+\section*{Data and Code Availability}
+The training and evaluation notebook, hyper-parameters, environment description, per-seed results, per-epoch losses, homology-filter hits and per-residue predictions are available at \url{https://github.com/ZAKI2828/pssp-efficiency-benchmark}. The datasets are publicly available from Hugging Face (\nolinkurl{proteinea/secondary_structure_prediction};~\citealp{proteinea2023dataset}).
+
+\bibliographystyle{elsarticle-harv}
+\begin{thebibliography}{37}
+
+\bibitem[Altschul et~al.(1997)]{altschul1997gapped}
+Altschul, S.F., Madden, T.L., Sch{\"a}ffer, A.A., Zhang, J., Zhang, Z., Miller, W., Lipman, D.J., 1997. Gapped BLAST and PSI-BLAST: a new generation of protein database search programs. Nucleic Acids Res. 25 (17), 3389--3402. \url{https://doi.org/10.1093/nar/25.17.3389}
+
+\bibitem[Buchan and Jones(2019)]{buchan2019psipred}
+Buchan, D.W.A., Jones, D.T., 2019. The PSIPRED Protein Analysis Workbench: 20 years on. Nucleic Acids Res. 47 (W1), W402--W407. \url{https://doi.org/10.1093/nar/gkz297}
+
+\bibitem[Cuff and Barton(1999)]{cuff1999evaluation}
+Cuff, J.A., Barton, G.J., 1999. Evaluation and improvement of multiple sequence methods for protein secondary structure prediction. Proteins 34 (4), 508--519. \url{https://doi.org/10.1002/(SICI)1097-0134(19990301)34:4<508::AID-PROT10>3.0.CO;2-4}
+
+\bibitem[Drozdetskiy et~al.(2015)]{drozdetskiy2015jpred4}
+Drozdetskiy, A., Cole, C., Procter, J., Barton, G.J., 2015. JPred4: a protein secondary structure prediction server. Nucleic Acids Res. 43 (W1), W389--W394. \url{https://doi.org/10.1093/nar/gkv332}
+
+\bibitem[Efron(1979)]{efron1979bootstrap}
+Efron, B., 1979. Bootstrap methods: another look at the jackknife. Ann. Stat. 7 (1), 1--26. \url{https://doi.org/10.1214/aos/1176344552}
+
+\bibitem[Elnaggar et~al.(2022)]{elnaggar2022prottrans}
+Elnaggar, A., Heinzinger, M., Dallago, C., Rehawi, G., Wang, Y., Jones, L., Gibbs, T., Feher, T., Angerer, C., Steinegger, M., Bhowmik, D., Rost, B., 2022. ProtTrans: toward understanding the language of life through self-supervised learning. IEEE Trans. Pattern Anal. Mach. Intell. 44 (10), 7112--7127. \url{https://doi.org/10.1109/TPAMI.2021.3095381}
+
+\bibitem[Hanson et~al.(2019)]{hanson2019improving}
+Hanson, J., Paliwal, K., Litfin, T., Yang, Y., Zhou, Y., 2019. Improving prediction of protein secondary structure, backbone angles, solvent accessibility and contact numbers by using predicted contact maps and an ensemble of recurrent and residual convolutional neural networks. Bioinformatics 35 (14), 2403--2410. \url{https://doi.org/10.1093/bioinformatics/bty1006}
+
+\bibitem[Heffernan et~al.(2017)]{heffernan2017capturing}
+Heffernan, R., Yang, Y., Paliwal, K., Zhou, Y., 2017. Capturing non-local interactions by long short-term memory bidirectional recurrent neural networks for improving prediction of protein secondary structure, backbone angles, contact numbers and solvent accessibility. Bioinformatics 33 (18), 2842--2849. \url{https://doi.org/10.1093/bioinformatics/btx218}
+
+\bibitem[Heinzinger et~al.(2019)]{heinzinger2019modeling}
+Heinzinger, M., Elnaggar, A., Wang, Y., Dallago, C., Nechaev, D., Matthes, F., Rost, B., 2019. Modeling aspects of the language of life through transfer-learning protein sequences. BMC Bioinform. 20, 723. \url{https://doi.org/10.1186/s12859-019-3220-8}
+
+\bibitem[Hochreiter and Schmidhuber(1997)]{hochreiter1997long}
+Hochreiter, S., Schmidhuber, J., 1997. Long short-term memory. Neural Comput. 9 (8), 1735--1780. \url{https://doi.org/10.1162/neco.1997.9.8.1735}
+
+\bibitem[Holm(1979)]{holm1979simple}
+Holm, S., 1979. A simple sequentially rejective multiple test procedure. Scand. J. Stat. 6 (2), 65--70. \url{https://www.jstor.org/stable/4615733}
+
+\bibitem[H{\o}ie et~al.(2022)]{hoie2022netsurfp3}
+H{\o}ie, M.H., Kiehl, E.N., Petersen, B., Nielsen, M., Winther, O., Nielsen, H., Hallgren, J., Marcatili, P., 2022. NetSurfP-3.0: accurate and fast prediction of protein structural features by protein language models and deep learning. Nucleic Acids Res. 50 (W1), W510--W515. \url{https://doi.org/10.1093/nar/gkac439}
+
+\bibitem[Jones(1999)]{jones1999protein}
+Jones, D.T., 1999. Protein secondary structure prediction based on position-specific scoring matrices. J. Mol. Biol. 292 (2), 195--202. \url{https://doi.org/10.1006/jmbi.1999.3091}
+
+\bibitem[Jumper et~al.(2021)]{jumper2021highly}
+Jumper, J., Evans, R., Pritzel, A., Green, T., Figurnov, M., Ronneberger, O., Tunyasuvunakool, K., Bates, R., {\v{Z}}{\'\i}dek, A., Potapenko, A., et~al., 2021. Highly accurate protein structure prediction with AlphaFold. Nature 596 (7873), 583--589. \url{https://doi.org/10.1038/s41586-021-03819-2}
+
+\bibitem[Kabsch and Sander(1983)]{kabsch1983dictionary}
+Kabsch, W., Sander, C., 1983. Dictionary of protein secondary structure: pattern recognition of hydrogen-bonded and geometrical features. Biopolymers 22 (12), 2577--2637. \url{https://doi.org/10.1002/bip.360221211}
+
+\bibitem[Kingma and Ba(2015)]{kingma2014adam}
+Kingma, D.P., Ba, J., 2015. Adam: a method for stochastic optimization, in: 3rd International Conference on Learning Representations (ICLR). Preprint: arXiv:1412.6980. \url{https://doi.org/10.48550/arXiv.1412.6980}
+
+\bibitem[Klausen et~al.(2019)]{klausen2019netsurfp}
+Klausen, M.S., Jespersen, M.C., Nielsen, H., Jensen, K.K., Jurtz, V.I., S{\o}nderby, C.K., Sommer, M.O.A., Winther, O., Nielsen, M., Petersen, B., Marcatili, P., 2019. NetSurfP-2.0: improved prediction of protein structural features by integrated deep learning. Proteins 87 (6), 520--527. \url{https://doi.org/10.1002/prot.25674}
+
+\bibitem[Kryshtafovych et~al.(2021)]{kryshtafovych2021critical}
+Kryshtafovych, A., Schwede, T., Topf, M., Fidelis, K., Moult, J., 2021. Critical assessment of methods of protein structure prediction (CASP)---Round XIV. Proteins 89 (12), 1607--1617. \url{https://doi.org/10.1002/prot.26237}
+
+\bibitem[Lin et~al.(2023)]{lin2023evolutionary}
+Lin, Z., Akin, H., Rao, R., Hie, B., Zhu, Z., Lu, W., Smetanin, N., Verkuil, R., Kabeli, O., Shmueli, Y., dos Santos Costa, A., Fazel-Zarandi, M., Sercu, T., Candido, S., Rives, A., 2023. Evolutionary-scale prediction of atomic-level protein structure with a language model. Science 379 (6637), 1123--1130. \url{https://doi.org/10.1126/science.ade2574}
+
+\bibitem[Loshchilov and Hutter(2019)]{loshchilov2017decoupled}
+Loshchilov, I., Hutter, F., 2019. Decoupled weight decay regularization, in: 7th International Conference on Learning Representations (ICLR). Preprint: arXiv:1711.05101. \url{https://doi.org/10.48550/arXiv.1711.05101}
+
+\bibitem[McNemar(1947)]{mcnemar1947note}
+McNemar, Q., 1947. Note on the sampling error of the difference between correlated proportions or percentages. Psychometrika 12 (2), 153--157. \url{https://doi.org/10.1007/BF02295996}
+
+\bibitem[Moult et~al.(2018)]{moult2018critical}
+Moult, J., Fidelis, K., Kryshtafovych, A., Schwede, T., Tramontano, A., 2018. Critical assessment of methods of protein structure prediction (CASP)---Round XII. Proteins 86 (S1), 7--15. \url{https://doi.org/10.1002/prot.25415}
+
+\bibitem[Paszke et~al.(2019)]{paszke2019pytorch}
+Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., et~al., 2019. PyTorch: an imperative style, high-performance deep learning library, in: Advances in Neural Information Processing Systems 32 (NeurIPS 2019). Preprint: arXiv:1912.01703. \url{https://doi.org/10.48550/arXiv.1912.01703}
+
+\bibitem[Proteinea(2023)]{proteinea2023dataset}
+[dataset] Proteinea, 2023. secondary\_structure\_prediction. Hugging Face, revision 5d2e1b4. \url{https://doi.org/10.57967/hf/1104}
+
+\bibitem[Remmert et~al.(2012)]{remmert2012hhblits}
+Remmert, M., Biegert, A., Hauser, A., S{\"o}ding, J., 2012. HHblits: lightning-fast iterative protein sequence searching by HMM-HMM alignment. Nat. Methods 9 (2), 173--175. \url{https://doi.org/10.1038/nmeth.1818}
+
+\bibitem[Rives et~al.(2021)]{rives2021biological}
+Rives, A., Meier, J., Sercu, T., Goyal, S., Lin, Z., Liu, J., Guo, D., Ott, M., Zitnick, C.L., Ma, J., Fergus, R., 2021. Biological structure and function emerge from scaling unsupervised learning to 250 million protein sequences. Proc. Natl. Acad. Sci. U.S.A. 118 (15), e2016239118. \url{https://doi.org/10.1073/pnas.2016239118}
+
+\bibitem[Rost(2001)]{rost2001review}
+Rost, B., 2001. Review: protein secondary structure prediction continues to rise. J. Struct. Biol. 134 (2--3), 204--218. \url{https://doi.org/10.1006/jsbi.2001.4336}
+
+\bibitem[Rost and Sander(1993)]{rost1993prediction}
+Rost, B., Sander, C., 1993. Prediction of protein secondary structure at better than 70\% accuracy. J. Mol. Biol. 232 (2), 584--599. \url{https://doi.org/10.1006/jmbi.1993.1413}
+
+\bibitem[Schuster and Paliwal(1997)]{schuster1997bidirectional}
+Schuster, M., Paliwal, K.K., 1997. Bidirectional recurrent neural networks. IEEE Trans. Signal Process. 45 (11), 2673--2681. \url{https://doi.org/10.1109/78.650093}
+
+\bibitem[Singh et~al.(2021)]{singh2021spot1d}
+Singh, J., Litfin, T., Paliwal, K., Singh, J., Hanumanthappa, A.K., Zhou, Y., 2021. SPOT-1D-Single: improving the single-sequence-based prediction of protein secondary structure, backbone angles, solvent accessibility and half-sphere exposures using a large training set and ensembled deep learning. Bioinformatics 37 (20), 3464--3472. \url{https://doi.org/10.1093/bioinformatics/btab316}
+
+\bibitem[Steinegger and S{\"o}ding(2017)]{steinegger2017mmseqs2}
+Steinegger, M., S{\"o}ding, J., 2017. MMseqs2 enables sensitive protein sequence searching for the analysis of massive data sets. Nat. Biotechnol. 35 (11), 1026--1028. \url{https://doi.org/10.1038/nbt.3988}
+
+\bibitem[Suzek et~al.(2015)]{suzek2015uniref}
+Suzek, B.E., Wang, Y., Huang, H., McGarvey, P.B., Wu, C.H., the UniProt Consortium, 2015. UniRef clusters: a comprehensive and scalable alternative for improving sequence similarity searches. Bioinformatics 31 (6), 926--932. \url{https://doi.org/10.1093/bioinformatics/btu739}
+
+\bibitem[Wang et~al.(2016)]{wang2016protein}
+Wang, S., Peng, J., Ma, J., Xu, J., 2016. Protein secondary structure prediction using deep convolutional neural fields. Sci. Rep. 6, 18962. \url{https://doi.org/10.1038/srep18962}
+
+\bibitem[Wilcoxon(1945)]{wilcoxon1945individual}
+Wilcoxon, F., 1945. Individual comparisons by ranking methods. Biom. Bull. 1 (6), 80--83. \url{https://doi.org/10.2307/3001968}
+
+\bibitem[Wolf et~al.(2020)]{wolf2020transformers}
+Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P., Rault, T., Louf, R., Funtowicz, M., et~al., 2020. Transformers: state-of-the-art natural language processing, in: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations, pp. 38--45. \url{https://doi.org/10.18653/v1/2020.emnlp-demos.6}
+
+\bibitem[Yang et~al.(2018)]{yang2018sixty}
+Yang, Y., Gao, J., Wang, J., Heffernan, R., Hanson, J., Paliwal, K., Zhou, Y., 2018. Sixty-five years of the long march in protein secondary structure prediction: the final stretch? Brief. Bioinform. 19 (3), 482--494. \url{https://doi.org/10.1093/bib/bbw129}
+
+\bibitem[Zemla et~al.(1999)]{zemla1999modified}
+Zemla, A., Venclovas, {\v{C}}., Fidelis, K., Rost, B., 1999. A modified definition of Sov, a segment-based measure for protein secondary structure prediction assessment. Proteins 34 (2), 220--223. \url{https://doi.org/10.1002/(SICI)1097-0134(19990201)34:2<220::AID-PROT7>3.0.CO;2-K}
+
+\end{thebibliography}
+
+
+\end{document}

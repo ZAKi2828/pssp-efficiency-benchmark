@@ -1,0 +1,16 @@
+{
+  "gpu": "Tesla T4",
+  "cpu": "Intel(R) Xeon(R) CPU @ 2.00GHz",
+  "n_cpu": 2,
+  "ram_total_MB": "12975",
+  "cpu_threads_used": 2,
+  "torch": "2.14.1+cu130",
+  "transformers": "5.22.1",
+  "python": "3.13.16",
+  "cuda": "13.0",
+  "n_seq": 100,
+  "rounds": 10,
+  "warmup": 3,
+  "design": "interleaved rounds, random model order per round, one process per model",
+  "date": "2026-11-15 13:43"
+}
